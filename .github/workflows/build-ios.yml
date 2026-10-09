@@ -5,48 +5,42 @@ on:
     branches: [main]
 
 jobs:
-  unity:
-    runs-on: ubuntu-latest
+  ios:
+    runs-on: macos-latest
+    env:
+      GODOT_VERSION: "4.3"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: Library
-          key: Library-iOS-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
-          restore-keys: Library-iOS-
-      - uses: game-ci/unity-builder@v4
-        env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-        with:
-          unityVersion: 2022.3.45f1
-          targetPlatform: iOS
-          buildMethod: BuildScript.BuildIOS
-      - uses: actions/upload-artifact@v4
-        with:
-          name: xcode-project
-          path: build/iOS
 
-  ipa:
-    needs: unity
-    runs-on: macos-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: xcode-project
-          path: xcode
+      - name: Install Godot and export templates
+        run: |
+          BASE=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -sL -o godot.zip $BASE/Godot_v${GODOT_VERSION}-stable_macos.universal.zip
+          curl -sL -o templates.tpz $BASE/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          unzip -q godot.zip
+          unzip -q templates.tpz -d tpl
+          DEST="$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$DEST"
+          cp -R tpl/templates/* "$DEST/"
+
+      - name: Export Xcode project
+        run: |
+          mkdir -p build/ios
+          Godot.app/Contents/MacOS/Godot --headless --path . --import || true
+          Godot.app/Contents/MacOS/Godot --headless --path . --export-release "iOS" build/ios/CapitalFall.ipa
+          ls -R build/ios | head -50
+
       - name: Build unsigned IPA
         run: |
-          cd xcode
-          chmod -R +x . || true
-          xcodebuild -project Unity-iPhone.xcodeproj -scheme Unity-iPhone \
+          cd build/ios
+          xcodebuild -project CapitalFall.xcodeproj -scheme CapitalFall \
             -configuration Release -sdk iphoneos -derivedDataPath out \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
           mkdir Payload
           cp -R out/Build/Products/Release-iphoneos/*.app Payload/
-          zip -r ../Capital-Fall.ipa Payload
+          zip -qr ../../CapitalFall.ipa Payload
+
       - uses: actions/upload-artifact@v4
         with:
           name: Capital-Fall-ipa
-          path: Capital-Fall.ipa
+          path: CapitalFall.ipa
